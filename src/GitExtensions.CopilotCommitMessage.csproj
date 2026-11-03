@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>GitExtensions.CopilotCommitMessage</AssemblyName>
+    <RootNamespace>GitExtensions.CopilotCommitMessage</RootNamespace>
+    <Version>1.0.0</Version>
+    <PackageId>GitExtensions.CopilotCommitMessage</PackageId>
+    <PackageTags>GitExtensions;Copilot;commit-message</PackageTags>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <Authors>Bas van Beek</Authors>
+    <Description>Generate a commit message from staged changes using the official GitHub Copilot SDK.</Description>
+    <GitExtensionsPath Condition="'$(GitExtensionsPath)' == ''">C:\Program Files\GitExtensions</GitExtensionsPath>
+    <NuspecFile>$(MSBuildProjectDirectory)\GitExtensions.CopilotCommitMessage.nuspec</NuspecFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GitHub.Copilot.SDK" Version="1.0.28" />
+    <InternalsVisibleTo Include="GitExtensions.CopilotCommitMessage.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ComponentModel.Composition">
+      <HintPath>$(GitExtensionsPath)\System.ComponentModel.Composition.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GitExtensions.Extensibility">
+      <HintPath>$(GitExtensionsPath)\GitExtensions.Extensibility.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GitUIPluginInterfaces">
+      <HintPath>$(GitExtensionsPath)\GitUIPluginInterfaces.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GitCommands">
+      <HintPath>$(GitExtensionsPath)\GitCommands.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="SetPackageProperties" BeforeTargets="GenerateNuspec">
+    <PropertyGroup>
+      <NuspecProperties>
+        id=$(PackageId);
+        version=$(Version);
+        author=$(Authors);
+        description=$(Description);
+        tags=$(PackageTags.Replace(';',' '));
+        targetDir=$(TargetDir)
+      </NuspecProperties>
+    </PropertyGroup>
+  </Target>
+</Project>
