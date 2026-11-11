@@ -27,6 +27,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
     private const int MaxMessageCharacters = 8_000;
 
     private ChoiceSetting _model = CreateModelSetting();
+    private BoolSetting _useIsolatedCopilotHome = CreateUseIsolatedCopilotHomeSetting();
     private StringSetting _commitMessageInstructions = CreateCommitMessageInstructionsSetting();
     private IGitModule? _module;
     private bool _idleHooked;
@@ -48,6 +49,8 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         modelControl.DropDown += async (_, _) => await LoadModelOptionsAsync(modelControl, modelSetting, modelOptionState);
         _model = modelSetting;
 
+        _useIsolatedCopilotHome = CreateUseIsolatedCopilotHomeSetting();
+
         StringSetting instructionsSetting = CreateCommitMessageInstructionsSetting();
         instructionsSetting.CustomControl = new TextBox
         {
@@ -60,6 +63,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         _commitMessageInstructions = instructionsSetting;
 
         yield return modelSetting;
+        yield return _useIsolatedCopilotHome;
         yield return instructionsSetting;
     }
 
@@ -206,6 +210,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
                 workingDirectory,
                 _model.ValueOrDefault(Settings),
                 _commitMessageInstructions.ValueOrDefault(Settings),
+                _useIsolatedCopilotHome.ValueOrDefault(Settings),
                 cancellation.Token);
             if (!form.IsDisposed && !form.Disposing && !cancellation.IsCancellationRequested &&
                 string.Equals(ReadCommitMessage(form), originalMessage, StringComparison.Ordinal))
@@ -252,6 +257,20 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         return new StringSetting("Commit message instructions", CopilotIsolation.DefaultCommitMessageInstructions);
     }
 
+    private static BoolSetting CreateUseIsolatedCopilotHomeSetting()
+    {
+        return new BoolSetting("Use isolated Copilot home", false);
+    }
+
+    private static string ResolveCopilotHome(bool useIsolatedCopilotHome)
+    {
+        return CopilotIsolation.ResolveCopilotHome(
+            useIsolatedCopilotHome,
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.GetEnvironmentVariable("COPILOT_HOME"));
+    }
+
     private async Task LoadModelOptionsAsync(ComboBox comboBox, ChoiceSetting modelSetting, ModelOptionState state)
     {
         if (state.Loaded || state.Loading)
@@ -263,7 +282,8 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         try
         {
             using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(30));
-            IReadOnlyList<string> modelChoices = await ListModelChoicesAsync(cancellation.Token);
+            IReadOnlyList<string> modelChoices = await ListModelChoicesAsync(
+                _useIsolatedCopilotHome.ValueOrDefault(Settings), cancellation.Token);
             if (comboBox.IsDisposed)
             {
                 return;
@@ -305,11 +325,13 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         }
     }
 
-    private static async Task<IReadOnlyList<string>> ListModelChoicesAsync(CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<string>> ListModelChoicesAsync(
+        bool useIsolatedCopilotHome,
+        CancellationToken cancellationToken)
     {
         string localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string appDirectory = Path.Combine(localData, "GitExtensions", "CopilotCommitMessage");
-        string copilotHome = Path.Combine(appDirectory, "CopilotHome");
+        string copilotHome = ResolveCopilotHome(useIsolatedCopilotHome);
         string workingDirectory = Path.Combine(appDirectory, "EmptyWorkspace");
         Directory.CreateDirectory(copilotHome);
         Directory.CreateDirectory(workingDirectory);
@@ -323,7 +345,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         if (!auth.IsAuthenticated)
         {
             throw new InvalidOperationException(
-                "Copilot is not signed in for the plugin's isolated Copilot home. Sign in to GitHub Copilot using the official Copilot CLI with COPILOT_HOME set to:\n" + copilotHome);
+                "Copilot is not signed in for the selected Copilot home. Sign in using the official Copilot CLI:\n" + copilotHome);
         }
 
         IList<ModelInfo> models = await client.ListModelsAsync(cancellationToken).ConfigureAwait(false);
@@ -334,6 +356,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         string repositoryDirectory,
         string? configuredModel,
         string? configuredInstructions,
+        bool useIsolatedCopilotHome,
         CancellationToken cancellationToken)
     {
         GitHelper.StagedDiff stagedDiff = await GitHelper.GetStagedDiffAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
@@ -346,7 +369,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
 
         string localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string appDirectory = Path.Combine(localData, "GitExtensions", "CopilotCommitMessage");
-        string copilotHome = Path.Combine(appDirectory, "CopilotHome");
+        string copilotHome = ResolveCopilotHome(useIsolatedCopilotHome);
         string configDirectory = Path.Combine(appDirectory, "Config");
         string workingDirectory = Path.Combine(appDirectory, "EmptyWorkspace");
         Directory.CreateDirectory(copilotHome);
@@ -369,7 +392,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         if (!auth.IsAuthenticated)
         {
             throw new InvalidOperationException(
-                "Copilot is not signed in for the plugin's isolated Copilot home. Sign in to GitHub Copilot using the official Copilot CLI with COPILOT_HOME set to:\n" + copilotHome);
+                "Copilot is not signed in for the selected Copilot home. Sign in using the official Copilot CLI:\n" + copilotHome);
         }
 
         string modelId;

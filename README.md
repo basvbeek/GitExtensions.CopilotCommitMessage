@@ -1,18 +1,20 @@
 # Git Extensions Copilot Commit Message
 
-A Git Extensions 7.x commit-dialog plugin that generates a commit message from staged changes with the official `GitHub.Copilot.SDK` .NET client. It targets .NET 10 Windows Desktop and requires a GitHub Copilot subscription signed into the plugin's isolated Copilot home.
+A Git Extensions 7.x commit-dialog plugin that generates a commit message from staged changes with the official `GitHub.Copilot.SDK` .NET client. It targets .NET 10 Windows Desktop and uses the user's default Copilot home (`%USERPROFILE%\.copilot`, or `COPILOT_HOME` when set) by default. An option enables a separate plugin-specific Copilot home.
 
 ## Security Model
 
 The staged diff and the subjects of the two most recent commits are read only after the user clicks **Copilot message**. The plugin does not read unstaged or untracked file contents. Both the diff and commit subjects are sent to GitHub Copilot; review them for secrets before using the feature. Recent commit subjects are included only as style references and are not intended to be copied.
 
-The client uses SDK `CopilotClientMode.Empty`, its own `COPILOT_HOME`, a separate empty working directory outside the repository, a cleared child-process environment, and an isolated configuration directory. The session explicitly supplies an empty tool allowlist, empty tool/MCP/plugin/instruction/agent/hook collections, disables config discovery, custom instructions, Git operations, skills, hooks, session storage, and telemetry, and sends the diff as JSON-encoded text without file attachments. No repository path is passed to the runtime. The default model is `auto`; an explicitly configured model ID is checked against the account's available, enabled models before use.
+The client uses SDK `CopilotClientMode.Empty`, the selected Copilot home, a separate empty working directory outside the repository, a cleared child-process environment, and an isolated configuration directory. The session explicitly supplies an empty tool allowlist, empty tool/MCP/plugin/instruction/agent/hook collections, disables config discovery, custom instructions, Git operations, skills, hooks, session storage, and telemetry, and sends the diff as JSON-encoded text without file attachments. No repository path is passed to the runtime. The default model is `auto`; an explicitly configured model ID is checked against the account's available, enabled models before use.
 
-This limits the runtime's application-level context and capabilities; it is not an operating-system sandbox. The runtime can make network requests to GitHub Copilot as required to generate a response.
+This limits the runtime's application-level context and capabilities; it is not an operating-system sandbox. The runtime can make network requests to GitHub Copilot as required to generate a response. The separate-home option isolates Copilot credentials and state, not the Windows account's filesystem permissions.
 
 ## Sign In
 
-The plugin deliberately uses a dedicated Copilot home rather than GitHub CLI credentials or the user's default Copilot profile. Sign in once using the official Copilot CLI with the environment set to the same folder the plugin uses:
+By default, the plugin uses the Copilot home already used by Copilot CLI: `%USERPROFILE%\.copilot`, unless `COPILOT_HOME` is set. Sign in there using the official Copilot CLI (`copilot login`); the plugin does not fall back to another profile if authentication is unavailable.
+
+To use a separate profile instead, enable **Use isolated Copilot home** under **Settings > Plugins > Copilot Commit Message**. If you signed in to the plugin-specific home with an earlier release, enable this option to continue using that sign-in. Then sign in once with `COPILOT_HOME` set to the plugin's home:
 
 ```powershell
 $env:COPILOT_HOME = Join-Path $env:LOCALAPPDATA 'GitExtensions\CopilotCommitMessage\CopilotHome'
@@ -20,7 +22,7 @@ $env:COPILOT_DISABLE_KEYTAR = '1'
 copilot login
 ```
 
-The SDK uses file-based credentials under that home when keytar is disabled. The plugin does not read, copy, display, or persist access tokens in Git Extensions settings. If authentication is unavailable, the plugin shows the expected home path and does not fall back to another profile.
+The SDK uses file-based credentials under that home when keytar is disabled. The plugin does not read, copy, display, or persist access tokens in Git Extensions settings. When isolation is enabled, the plugin reports that home if authentication is unavailable and does not fall back to the default profile.
 
 ## Build
 
@@ -64,7 +66,7 @@ dotnet build .\GitExtensions.CopilotCommitMessage.sln -c Release `
 
 ##  Install
 
-Copy the contents of `src\bin\Release\net10.0-windows` into a new folder under Git Extensions' user plugins directory (`%LOCALAPPDATA%\GitExtensions\UserPlugins`). Include the `runtimes` directory and all SDK dependency DLLs. Do not copy the host's Git Extensions assemblies from the build environment. Restart Git Extensions and open the Commit dialog; the **Copilot message** button appears on its toolbar. The settings are under **Settings > Plugins > Copilot Commit Message**. The model dropdown defaults to `auto`; open it to load the enabled models available to the account signed into the plugin's isolated Copilot home. **Commit message instructions** defaults to concise, purpose-focused guidance that follows recent repository style without copying commit-specific details; it can be edited or cleared. The fixed diff-safety and raw-output requirements remain in effect regardless of this setting.
+Copy the contents of `src\bin\Release\net10.0-windows` into a new folder under Git Extensions' user plugins directory (`%LOCALAPPDATA%\GitExtensions\UserPlugins`). Include the `runtimes` directory and all SDK dependency DLLs. Do not copy the host's Git Extensions assemblies from the build environment. Restart Git Extensions and open the Commit dialog; the **Copilot message** button appears on its toolbar. The settings are under **Settings > Plugins > Copilot Commit Message**. **Use isolated Copilot home** is off by default; enable it to use the plugin-specific sign-in described above. The model dropdown defaults to `auto`; open it to load the enabled models available to the account in the selected Copilot home. **Commit message instructions** defaults to concise, purpose-focused guidance that follows recent repository style without copying commit-specific details; it can be edited or cleared. The fixed diff-safety and raw-output requirements remain in effect regardless of this setting.
 
 ## Tests
 
@@ -72,7 +74,7 @@ Copy the contents of `src\bin\Release\net10.0-windows` into a new folder under G
 dotnet test tests\GitExtensions.CopilotCommitMessage.Tests.csproj -c Release
 ```
 
-Tests cover staged-only diff retrieval, explicit SDK isolation settings, and default/explicit model selection. A live Copilot sign-in and Git Extensions UI smoke test remain manual.
+Tests cover staged-only diff retrieval, Copilot-home selection, explicit SDK isolation settings, and default/explicit model selection. A live Copilot sign-in and Git Extensions UI smoke test remain manual.
 
 ## License
 

@@ -31,6 +31,21 @@ internal static class CopilotIsolation
         return runtimePath;
     }
 
+    internal static string ResolveCopilotHome(
+        bool useIsolatedHome,
+        string localAppDataDirectory,
+        string userProfileDirectory,
+        string? configuredCopilotHome)
+    {
+        string copilotHome = useIsolatedHome
+            ? Path.Combine(localAppDataDirectory, "GitExtensions", "CopilotCommitMessage", "CopilotHome")
+            : string.IsNullOrWhiteSpace(configuredCopilotHome)
+                ? Path.Combine(userProfileDirectory, ".copilot")
+                : configuredCopilotHome;
+
+        return Path.GetFullPath(copilotHome);
+    }
+
     internal static string CreateUserPrompt(string stagedDiff, IReadOnlyList<string> recentCommitMessages, bool truncated)
     {
         string prompt = string.Empty;

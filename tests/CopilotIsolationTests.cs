@@ -7,6 +7,44 @@ namespace GitExtensions.CopilotCommitMessage.Tests;
 public sealed class CopilotIsolationTests
 {
     [Fact]
+    public void ResolveCopilotHome_UsesConfiguredHomeWhenIsolationIsDisabled()
+    {
+        string copilotHome = CopilotIsolation.ResolveCopilotHome(
+            useIsolatedHome: false,
+            localAppDataDirectory: "C:\\Users\\Test\\AppData\\Local",
+            userProfileDirectory: "C:\\Users\\Test",
+            configuredCopilotHome: "D:\\CopilotProfile");
+
+        Assert.Equal("D:\\CopilotProfile", copilotHome);
+    }
+
+    [Fact]
+    public void ResolveCopilotHome_FallsBackToUserProfileWhenNoOverrideIsSet()
+    {
+        string copilotHome = CopilotIsolation.ResolveCopilotHome(
+            useIsolatedHome: false,
+            localAppDataDirectory: "C:\\Users\\Test\\AppData\\Local",
+            userProfileDirectory: "C:\\Users\\Test",
+            configuredCopilotHome: null);
+
+        Assert.Equal("C:\\Users\\Test\\.copilot", copilotHome);
+    }
+
+    [Fact]
+    public void ResolveCopilotHome_UsesPluginHomeWhenIsolationIsEnabled()
+    {
+        string copilotHome = CopilotIsolation.ResolveCopilotHome(
+            useIsolatedHome: true,
+            localAppDataDirectory: "C:\\Users\\Test\\AppData\\Local",
+            userProfileDirectory: "C:\\Users\\Test",
+            configuredCopilotHome: "D:\\CopilotProfile");
+
+        Assert.Equal(
+            "C:\\Users\\Test\\AppData\\Local\\GitExtensions\\CopilotCommitMessage\\CopilotHome",
+            copilotHome);
+    }
+
+    [Fact]
     public void CreateClientOptions_UsesIsolatedEmptyModeAndEnvironment()
     {
         CopilotClientOptions options = CopilotIsolation.CreateClientOptions(
