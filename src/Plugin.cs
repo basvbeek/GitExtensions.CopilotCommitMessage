@@ -36,13 +36,14 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         : base(hasSettings: true)
     {
         Name = "Copilot Commit Message";
-        Description = "Generate a commit message from staged changes using GitHub Copilot.";
+        Description = "Generate a commit message from pending changes using GitHub Copilot.";
+        Icon = PluginIcon.Create();
     }
 
     public override IEnumerable<ISetting> GetSettings()
     {
         ChoiceSetting modelSetting = CreateModelSetting();
-        ComboBox modelControl = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+        ModelComboBox modelControl = new();
         modelControl.Items.Add(CopilotModelSelection.AutoModelId);
         modelSetting.CustomControl = modelControl;
         ModelOptionState modelOptionState = new();
@@ -85,7 +86,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
 
     public override bool Execute(GitUIEventArgs args)
     {
-        MessageBox.Show("Open the Commit dialog to generate a message from staged changes.", Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show("Open the Commit dialog to generate a message from pending changes.", Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
         return false;
     }
 
@@ -164,7 +165,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
             Name = ButtonName,
             Text = ButtonLabel,
             DisplayStyle = ToolStripItemDisplayStyle.Text,
-            ToolTipText = "Generate a message from staged changes. The diff is sent only after you click.",
+            ToolTipText = "Generate a message from staged or working-tree changes. The selected change context is sent only after you click.",
             Tag = new ButtonState(),
         };
         button.Click += async (_, _) => await OnGenerateClickedAsync(form, button);
@@ -271,7 +272,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
             Environment.GetEnvironmentVariable("COPILOT_HOME"));
     }
 
-    private async Task LoadModelOptionsAsync(ComboBox comboBox, ChoiceSetting modelSetting, ModelOptionState state)
+    private async Task LoadModelOptionsAsync(ModelComboBox comboBox, ChoiceSetting modelSetting, ModelOptionState state)
     {
         if (state.Loaded || state.Loading)
         {
@@ -279,6 +280,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         }
 
         state.Loading = true;
+        comboBox.IsLoading = true;
         try
         {
             using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(30));
@@ -322,6 +324,10 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         finally
         {
             state.Loading = false;
+            if (!comboBox.IsDisposed)
+            {
+                comboBox.IsLoading = false;
+            }
         }
     }
 
@@ -345,7 +351,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         if (!auth.IsAuthenticated)
         {
             throw new InvalidOperationException(
-                "Copilot is not signed in for the selected Copilot home. Sign in using the official Copilot CLI:\n" + copilotHome);
+                "Copilot is not signed in for the selected home. Run `copilot login` with COPILOT_HOME set to this path:\n" + copilotHome);
         }
 
         IList<ModelInfo> models = await client.ListModelsAsync(cancellationToken).ConfigureAwait(false);
@@ -359,13 +365,19 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         bool useIsolatedCopilotHome,
         CancellationToken cancellationToken)
     {
-        GitHelper.StagedDiff stagedDiff = await GitHelper.GetStagedDiffAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(stagedDiff.Text))
+        GitHelper.CommitDiff commitDiff = await GitHelper.GetCommitDiffAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(commitDiff.Text) && commitDiff.UntrackedPaths.Count == 0)
         {
-            throw new InvalidOperationException("No staged changes were found. Stage the changes you want to commit, then try again.");
+            throw new InvalidOperationException("No eligible changes were found. Check the repository's .copilotignore and Git ignore rules.");
         }
 
-        IReadOnlyList<string> recentCommitMessages = await GitHelper.GetRecentCommitMessagesAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
+        GitHelper.CommitHistory commitHistory = await GitHelper.GetCommitHistoryAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
+        GitHelper.RepositoryContext repositoryContext = await GitHelper.GetRepositoryContextAsync(repositoryDirectory, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<GitHelper.FileContext> fileContexts = await GitHelper.GetFileContextsAsync(
+            repositoryDirectory,
+            commitDiff.Paths,
+            commitDiff.UntrackedPaths,
+            cancellationToken).ConfigureAwait(false);
 
         string localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string appDirectory = Path.Combine(localData, "GitExtensions", "CopilotCommitMessage");
@@ -392,7 +404,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
         if (!auth.IsAuthenticated)
         {
             throw new InvalidOperationException(
-                "Copilot is not signed in for the selected Copilot home. Sign in using the official Copilot CLI:\n" + copilotHome);
+                "Copilot is not signed in for the selected home. Run `copilot login` with COPILOT_HOME set to this path:\n" + copilotHome);
         }
 
         string modelId;
@@ -413,7 +425,11 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
             config.ConfigDirectory = configDirectory;
             session = await client.CreateSessionAsync(config, cancellationToken).ConfigureAwait(false);
 
-            string prompt = CopilotIsolation.CreateUserPrompt(stagedDiff.Text, recentCommitMessages, stagedDiff.Truncated);
+            string prompt = CopilotIsolation.CreateUserPrompt(
+                commitDiff,
+                commitHistory,
+                repositoryContext,
+                fileContexts);
 
             SessionEvent? response = await session.SendAndWaitAsync(
                 new MessageOptions { Prompt = prompt },
@@ -430,7 +446,7 @@ public sealed class Plugin : GitPluginBase, IGitPluginForRepository, IGitPluginF
                 throw new InvalidOperationException("Copilot's response exceeded the 8,000-character commit message limit.");
             }
 
-            return message;
+            return CommitMessageFormatter.WrapLines(message);
         }
         catch (OperationCanceledException)
         {

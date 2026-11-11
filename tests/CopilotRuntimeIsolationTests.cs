@@ -7,7 +7,7 @@ namespace GitExtensions.CopilotCommitMessage.Tests;
 public sealed class CopilotRuntimeIsolationTests
 {
     [Fact]
-    public async Task BundledRuntime_StartsWithoutAmbientAuthAndCreatesIsolatedSession()
+    public async Task BundledRuntime_StartsWithoutLoggedInUserAuthAndCreatesSession()
     {
         string root = Path.Combine(Path.GetTempPath(), "CopilotRuntimeIsolationTests", Guid.NewGuid().ToString("N"));
         string copilotHome = Path.Combine(root, "home");
@@ -19,7 +19,7 @@ public sealed class CopilotRuntimeIsolationTests
 
         string pluginDirectory = Environment.GetEnvironmentVariable("COPILOT_TEST_PLUGIN_DIRECTORY") ?? AppContext.BaseDirectory;
         string runtimePath = CopilotIsolation.GetRuntimePath(pluginDirectory);
-        CopilotClient client = new(CopilotIsolation.CreateClientOptions(copilotHome, workingDirectory, runtimePath));
+        CopilotClient client = new(CopilotIsolation.CreateClientOptions(copilotHome, workingDirectory, runtimePath, useLoggedInUser: false));
         try
         {
             await client.StartAsync();
